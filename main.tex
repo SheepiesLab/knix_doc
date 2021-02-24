@@ -1,0 +1,73 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Boosting Serverless Infrastructure with Swap and Fork\\
+% {\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
+% should not be used}
+\thanks{Identify applicable funding agency here. If none, delete this.}
+}
+
+\author{\IEEEauthorblockN{Hok Chun NG}
+\IEEEauthorblockA{\textit{Department of Computer Science and Engineering} \\
+\textit{Hong Kong University of Science and Technology}\\
+Hong Kong, China \\
+hcngac@connect.ust.hk}
+% \and
+% \IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{4\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{5\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{6\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+}
+
+\maketitle
+
+\begin{abstract}\label{abstract}
+Serverless services, or Function-as-a-Service, provide users with the ability of executing functions on demand on the cloud without any operational effort of server and networking management. Cold start is a performance penalty situation where new execution instances of the serverless function has to be spawned to handle new incoming requests because there are no existing or available warm instances ready to be used. One mitigation is to pre-warm a number of instances such that there are always some free warm instances ready to use. This method however is limited on memory capacity and is not effective on scaling up. Swapping is one memory management technique where a persistent storage device is used to hold some unused memory content to free up physical memory space. Forking is a Linux system call where a process is copied to create a new process efficiently. We propose to use swap space on fast solid state storage devices to greatly increase pre-warmed instance count and to use swap and fork combined for a rapid response to surges in requests. Preliminary result shows a great potential for the swap method. We propose to use Knix as a base framework, where process forking is already used as rapid scaling method.
+\end{abstract}
+
+\begin{IEEEkeywords}
+serverless, cold start, solid state storage
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+\section{Preliminary Result}
+
+\section{Knix Framework Design}
+
+\end{document}
