@@ -11,10 +11,10 @@
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
 
-\title{Boosting Serverless Infrastructure with Swap and Fork\\
+\title{Report: Boosting Serverless Infrastructure with Swap and Fast Storage\\
 % {\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
 % should not be used}
-\thanks{Identify applicable funding agency here. If none, delete this.}
+% \thanks{Identify applicable funding agency here. If none, delete this.}
 }
 
 \author{\IEEEauthorblockN{Hok Chun NG}
@@ -65,9 +65,48 @@ serverless, cold start, solid state storage
 \end{IEEEkeywords}
 
 \section{Introduction}
+Serverless services provide cloud users the ability to quickly deploy a piece of code, usually in the form of a self-contained stateless function, without having to create or manage any physical or virtual machine. With the ease and speed of deploying with serverless, and the reasonable pricing scheme of paying for only the execution time of the function, serverless has become a very popular service in recent years. 
+
+There are certain downsides to the serverless service, including the lack of permanent storage, lack of cooperation mechanism between execution instances and a slow cold-start and scale-up.
+
+\subsection{Disecting the cold-start issue}
+The problem of cold-start happens when a new function execution request comes in, but there are no free and ready function instances to immediately serve the request, and a new instance has to be created. Creating new instances involves two major steps: allocating or creating the environment for the instance (platform initialization) and function initialization. Platform initialization depends on the nature of the service framework. The environment can be a virtual machine, a container, or a plain process, depending on the requirements. VM provides the stronger hardware-based isolation between instances but with the heaviest setup, container provides a weaker operating system based isolation, and process have very little isolation with the fastest setup. Function initialization depends on the user code, including the coding language environment and imported libraries. 
+
+\section{Literature Studies}
+
+\subsection{Pre-warming}
+
+\subsection{Pause Container Pool}
+The main concept of the Pause Container Pool Management (PCPM) method is to create a pool of empty containers, ready for plugging in user functions. In some serverless framework, function instances are managed as containers. The creation of a new container involves a time cost, mainly in creating the networking stack of it. PCPM 
+
+\subsection{Micro VM}
 
 \section{Preliminary Result}
 
+\subsection{Experiment Setup}
+
+\subsection{Cold start time}
+
+\subsection{Memory Consumption}
+
 \section{Knix Framework Design}
+
+We proposed to use Knix as a base for our swap trial. Knix is a workflow-based serverless platform, where a workflow is an execution unit and functions are organized in a workflow. In Knix a container is created for each workflow, and each function is executed in a process. This provides the fastest possible cold-start and scale-up time as the creation of new function instance utilizes Linux fork system call to lazy copy another complete and ready instance, skipping both environment and function initialization. 
+
+Knix has two level of isolation: container-based isolation between workflows and process-based isolation between function instances. The stronger workflow isolation is for separating workflows possibly of different users. Functions within the same workflow are of the same user, so a weak process-level isolation suffices.
+
+\subsection{Original Design}
+
+In this section, we describes 
+
+\subsubsection{Components}
+
+\subsubsection{Request flow}
+
+\subsection{Knix Structure}
+
+\subsection{First Design}
+
+\subsection{Second Design}
 
 \end{document}
