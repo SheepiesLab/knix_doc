@@ -67,46 +67,113 @@ serverless, cold start, solid state storage
 \section{Introduction}
 Serverless services provide cloud users the ability to quickly deploy a piece of code, usually in the form of a self-contained stateless function, without having to create or manage any physical or virtual machine. With the ease and speed of deploying with serverless, and the reasonable pricing scheme of paying for only the execution time of the function, serverless has become a very popular service in recent years. 
 
-There are certain downsides to the serverless service, including the lack of permanent storage, lack of cooperation mechanism between execution instances and a slow cold-start and scale-up.
+There are certain downsides to the serverless service, including the lack of permanent storage, lack of cooperation mechanism between execution instances and a slow cold-start\cite{hellersteinServerlessComputingOne2018,jonasCloudProgrammingSimplified2019}. We mainly focus on the cold-start issue in this report.
 
 \subsection{Disecting the cold-start issue}
-The problem of cold-start happens when a new function execution request comes in, but there are no free and ready function instances to immediately serve the request, and a new instance has to be created. Creating new instances involves two major steps: allocating or creating the environment for the instance (platform initialization) and function initialization. Platform initialization depends on the nature of the service framework. The environment can be a virtual machine, a container, or a plain process, depending on the requirements. VM provides the stronger hardware-based isolation between instances but with the heaviest setup, container provides a weaker operating system based isolation, and process have very little isolation with the fastest setup. Function initialization depends on the user code, including the coding language environment and imported libraries. 
+The problem of cold-start happens when a new function execution request comes in, but there are no free and ready function instances to immediately serve the request, and a new instance has to be created. Creating new instances involves two major steps: allocating or creating the environment for the instance (platform initialization) and function initialization\cite{mohanAgileColdStarts2019}. Platform initialization depends on the nature of the service framework. The environment can be a virtual machine, a container, or a plain process, depending on the requirements. VM provides the stronger hardware-based isolation between instances but with the heaviest setup, container provides a weaker operating system based isolation, and process have very little isolation with the fastest setup. Function initialization depends on the user code, including the coding language environment and imported libraries. 
 
-\section{Literature Studies}
+\subsection{Existing solutions}
+There are solutions to mitigate cold-start latency from both serverless users and service providers. 
 
-\subsection{Pre-warming}
+Most users utilize a technique called pre-warming, which keeps a number of function instances alive\cite{NewAWSLambda2019,KeepingFunctionsWarm}. The framework for using serverless services from different providers named "Serverless" provides tool for periodically request a function to keep a function instance alive\cite{KeepingFunctionsWarm}. This method works by abusing the fact that most platform e.g. AWS conserve instances for future requests for a certain amount of time. Requesting the function from time to time keeps the instance from being recycled such that there is always a warm instance ready for real requests, removing cold-start latency entirely on the first request. AWS itself also provides parallel provisioning\cite{NewAWSLambda2019} which allows user to specify for keeping a certain number of instances to be always ready with extra costs. The pre-warm method is the best when request load is predictable. As instances are already warm and ready, no cold-start latency is induced if the number of parallel requests does not exceed the provisioned instances.
 
-\subsection{Pause Container Pool}
-The main concept of the Pause Container Pool Management (PCPM) method is to create a pool of empty containers, ready for plugging in user functions. In some serverless framework, function instances are managed as containers. The creation of a new container involves a time cost, mainly in creating the networking stack of it. PCPM 
+Lightening up the function environment with means of minimal VMs is one way of reducing platform initialization latency.\cite{agacheFirecrackerLightweightVirtualization2020,mancoMyVMLighter2017} Firecracker is a specialized lightweight virtualization platform by AWS for its serverless use only\cite{agacheFirecrackerLightweightVirtualization2020}. As a specialized VM platform, Firecracker can rapidly provide efficient microVMs which contain minimal OS kernel and essentials of the serverless service. There is also the added benefit of security as function instances are protected from each other by strong isolation provided by virtualization hardware.
 
-\subsection{Micro VM}
+Separating common parts of the environment with user code and pre-create and reuse the common environment provides latency reduction in eliminating redundent processes. \cite{mohanAgileColdStarts2019,caddenSEUSSSkipRedundant2020,linMitigatingColdStarts2019} In the paper \cite{mohanAgileColdStarts2019}, creating the networking stack for containers is identified as a bottleneck for a scale-up of serverless platforms based on containers. They provided the solution of having a pool of pause containers, which are skeleton containers that only have networking stack and other common parts. User functions are created on top of these skeleton containers when needed, removing the platform initialization latency. Knative \cite{linMitigatingColdStarts2019} provides a similar idea upon Kubernetes with the use of pods, which serve similar role as skeleton containers in \cite{mohanAgileColdStarts2019}. SEUSS \cite{caddenSEUSSSkipRedundant2020} attempts to snapshot function instances in its ready state and store it away, such that the cold-start latency involved is entirely replaced with the time for copying the snapshot.
+
+These solutions subject to different limitations. Pre-warm technique is limited by the memory capacity of the host and is costly and wasteful, as warm instances are always in memory, unused, waiting for requests. MicroVM and container pools still does not eliminate user initialization latency. SEUSS and its way of function instance snapshot requires an entirely new operating system which can be risky in the stability of the service.
+
+\subsection{The use of Swap in the cold-start problem}
+These limitations can be circumvented with Swap, a memory management facility that swaps unused memory content from physical memory space to secondary storage. 
+
+\subsubsection{What is Swap?}
+Swapping is the major part of virtual memory management in operating systems. Virtual memory is a abstraction of the physical memory provided by the operating system for processes so as to provide flexibility in the memory spaces of them. Virtual memory management maps the virtual memory space of a process to a wide range of devices not limited to physical memory to provide direct access. These "devices" can be files, disks, video framebuffer, and any other hardware or abstraction as implemented by the operating system. As the mapping is not a strict one-to-one mapping to the physical memory, it provides an illusion to the process that the memory space it can operate on is independent of, and can be much larger than, the physical memory space. Swapping is a method to realize the expansion to provide a larger memory space by storing currently unused memory range to a secondary storage and free those physical memory space for the current need, and retrieving those swapped-out memory content to physical when it is needed in the future.
+
+\subsubsection{How can Swap help?}
+The main idea of this project is to greatly increase the number of pre-warmed function instances with the extra memory space provided by swapping. As discussed before, keeping pre-warmed instances alive costs memory space which can be better utilized. These instances can be swapped out to secondary storage, which is cheaper and has much larger capacity, to free up physical memory. With the memory space bottleneck removed, huge number of pre-warmed instances can be deployed and the latency of starting them is the time to retrieve any necessary memory piece of those instances from storage. This also has the additional benefit of allowing more active instances as only the memory necessary to a function request is swapped-in to physical memory and unused part of the instance is kept in storage.
+
+To facilitate this method, a fast storage hardware is required to keep the latency of swapping-in low, especially in the situation where large number of instances are turned active and are swapped-in. Traditionally, secondary storage in the form of hard disks has huge capacity and is cheap, but is much slower than the memory and with milisecond-level latency, thus unsuitable for this task. With advancement in storage hardware such as solid-state NVMe storage and persistent memory\cite{foongStorageFastRest2016}, the swap method can be feasible.
 
 \section{Preliminary Result}
 
-\subsection{Experiment Setup}
+To demonstrate the feasibility of using swap for storing pre-warmed instances, we created a toy serverless framework and two simple functions: one function simply returns a string, and another processes an image with PIL creating a thumbnail. Under three situation: cold-start, warm-start and swapped-out warm-start, we measure the time for the function to be ready for request, and the time for completing the request. The tests are ran on AWS EC2 i3.metal instances with attached NVMe storage devices.
 
-\subsection{Cold start time}
+\subsection{Startup Time}
+With using swap, we hope to create a huge amount of warm instances and store them in their ready state to swap, in the light that we can quickly swap them in when request surges.
+
+Fig.\ref{http_a} shows the startup time and execution time of a simple function under cold-start, warm-start and swapped-out warm-start. Non-existing startup time for warm start is normal as warm instances are always ready for requests. Comparing the startup time between cold start and swapped start, swapped start costs significantly less startup latency of about 0.1s while cold starting takes 0.5s. This shows the time saving switching from environment and code initialization to retrieving swapped out, already ready instances.
+
+Fig.\ref{image_a} shows the startup time and execution time of an image processing function under cold-start, warm-start and swapped-out warm-start. In this test we can see a similar result in startup time comparing to the simple function test, while swapped start instances takes longer time to complete the image processing task. The extra execution time can be explained as the instance continuously retrieve memory content from swap when it is needed, resulting in extra time spent on waiting for the memory instead of execution. Swapping can affect the execution time, but in this test the combined startup and execution time for swapped start is still significantly less then the startup time of cold start.
+
+In conclusion, the swapping method can provide a latency reduction in cold-start situation depending on the workload and the function code.
 
 \subsection{Memory Consumption}
+With using swap, we hope to create the situation where the portion of unused function code and data stays in swap, such that the memory consumption by a function request is reduced and more requests can be processed without the memory limitation. 
+
+Fig.\ref{http_b} shows the memory consumption of a simple function under cold-start, warm-start and swapped-out warm-start during standby and execution. The memory consumption of cold starting and warm starting is identical as expected. Swapped start, when in ready and swapped out state, consumes a small portion of memory used by the operating system and is unswappable. During function execution, swapped instances still consumes a lot less memory than cold and warm start, indicating the function instance containing some unused memory that is not swapped in.
+
+Fig.\ref{image_b} shows the memory consumption of an image processing function under cold-start, warm-start and swapped-out warm-start during standby and execution. The situation is very similar to the simple function case except here swapped start function consumes more memory when running, which is expected as it uses a more complicated image processing library, thus using a larger portion of the function code.
+
+In conclusion, the test shows a memory conservation with swap method even when the function is being executed, making this method a feasible way to cramp more active function instances in one host.
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=6cm]{http_a.png}
+    \caption{Startup time and execution time of a simple function under cold-start, warm-start and swapped-out warm-start.}
+    \label{http_a}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=6cm]{image_a.png}
+    \caption{Startup time and execution time of an image processing function under cold-start, warm-start and swapped-out warm-start.}
+    \label{image_a}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=6cm]{http_b.png}
+    \caption{Memory consumption of a simple function under cold-start, warm-start and swapped-out warm-start during standby and execution.}
+    \label{http_b}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=6cm]{image_b.png}
+    \caption{Memory consumption of an image processing function under cold-start, warm-start and swapped-out warm-start during standby and execution.}
+    \label{image_b}
+\end{figure}
 
 \section{Knix Framework Design}
 
-We proposed to use Knix as a base for our swap trial. Knix is a workflow-based serverless platform, where a workflow is an execution unit and functions are organized in a workflow. In Knix a container is created for each workflow, and each function is executed in a process. This provides the fastest possible cold-start and scale-up time as the creation of new function instance utilizes Linux fork system call to lazy copy another complete and ready instance, skipping both environment and function initialization. 
+With a promising result from our preliminary tests we proposed to use Knix\cite{akkusSANDHighPerformanceServerless} as a base for our swap trial. Knix is a workflow-based serverless platform, where a workflow is an execution unit and functions are organized in a workflow. In Knix a container is created for each workflow, and each function is executed in a process. This provides the fastest possible cold-start and scale-up time as the creation of new function instance utilizes Linux fork system call to lazy copy another complete and ready instance, skipping both environment and function initialization for new instances. This also further reduce the memory footprint and swap handling time as Linux employs copy-on-write for fork, such that read-only memory content such as the function code and library is not copied, instead shared between forked processes.  
 
 Knix has two level of isolation: container-based isolation between workflows and process-based isolation between function instances. The stronger workflow isolation is for separating workflows possibly of different users. Functions within the same workflow are of the same user, so a weak process-level isolation suffices.
 
+In this section, we first introduce the original organization of Knix. Then, we illustrate how Knix can be modified to utilize swap as a boost method. We then introduces two attempted modification design.
+
 \subsection{Original Design}
 
-In this section, we describes 
+In this section, we describe the sandbox section of Knix which is responsible for the deployment of a workflow and all its cooresponding functions. 
 
 \subsubsection{Components}
 
 \subsubsection{Request flow}
 
-\subsection{Knix Structure}
+\subsection{Design Objectives}
+The goal of this modification is to allow Knix to create a large number of ready function instances and have them swapped out to storage. To facilitate this goal, the following objectives should be observed:
+
+\subsubsection{Swapped Instance Pool}
+
+\subsubsection{Pool Scheduling Algorithm}
+
+\subsubsection{Revised Request Dataflow}
 
 \subsection{First Design}
 
 \subsection{Second Design}
+
+\section{Conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{main}
 
 \end{document}

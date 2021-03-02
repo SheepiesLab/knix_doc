@@ -4,3 +4,9 @@
 *.log
 *.pdf
 *.synctex.gz
+.venv
+*.bbl
+*.blg
+*.pyc
+__pycache__
+.vscode
