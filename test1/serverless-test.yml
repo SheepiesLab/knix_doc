@@ -1,0 +1,10 @@
+apiVersion: ignite.weave.works/v1alpha2
+kind: VM
+metadata:
+  name: serverless_test
+spec:
+  image:
+    oci: benbenng/serverless_test
+  cpus: 1
+  diskSize: 3GB
+  memory: 800MB

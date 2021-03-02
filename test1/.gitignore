@@ -1,0 +1,7 @@
+test_firecracker/*
+test_root/*
+__pycache__/*
+.venv/*
+.vscode/*
+.env
+.out
