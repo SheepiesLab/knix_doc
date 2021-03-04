@@ -156,22 +156,85 @@ In this section, we describe the sandbox section of Knix which is responsible fo
 
 \subsubsection{Components}
 
+\paragraph{SandboxAgent}
+
+The SandboxAgent object/process is the entry point of a Knix sandbox. Its main role is to initialize a local queue service, parse workflow and create required FunctionWorker (\ref{functionWorker}), launch the sandbox Frontend (\ref{frontend}), and then the DataLayer. After all initialization of the sandbox is done, the SandboxAgent pulls and handles instructions via global queue service until instructed to shut down.
+
+\paragraph{LocalQueue}\label{localQueue}
+The LocalQueue is a service that provides inter-process communication in Knix. A process seeking to use the queue first connects to the LocalQueue via the LocalQueueClient. It can then use the client to create a topic in the queue. Messages can be sent to and pulled from a topic. Messages are modeled as LocalQueueClientMessage objects which consist of a key and a value, which can both be set by the sender.
+
+\paragraph{FunctionWorker}\label{functionWorker}
+The FunctionWorker object/process executes a function request. A FunctionWorker is created for each state in the deployed workflow. The FunctionWorker first initializes the runtime environment of the function and retrieves and initializes the function code. Then the FunctionWorker creates and continuously pulls the LocalQueue topic designated by the state to receive requests. Once the FunctionWorker receives a request via the LocalQueue, it forks and create an identical child process to handle the request. The result would first be stored in DataLayer by the key \verb|result_{execution_id}_{function_topic}|, and then be sent via LocalQueue to the next states. The result would also be stored in DataLayer by key \verb|result_{execution_id}| if the current function is the last state. The child process is terminated after handling a request, and the parent FunctionWorker continues to pull LocalQueue for requests while child is processing the request.
+
+\paragraph{Frontend}\label{frontend}
+The Frontend is the request entry point process for the workflow. Requests to execute a workflow is sent to the Frontend first. Frontend then put the request to LocalQueue to pass to the topic of the first function. Frontend then waits for the final result appearing in DataLayer, or pulls the Datalayer key upon user requests. Frontend returns the workflow result to the user when available.
+
+\paragraph{DataLayer}\label{dataLayer}
+The DataLayer is a shared key-value storage in Knix. Main usage is for result passing and checkpointing. DataLayer service is also open to user function.
+
 \subsubsection{Request flow}
+
+Imagine a request to execute a Knix workflow. The request calls the API endpoint in Frontend. Frontend assigns an execution id, and then pass that to the FunctionWorker of the first state with LocalQueue. FunctionWorker executes its function or state action with forked child, finds out the next state, and then pass the result to the next state with LocalQueue. If the state is an exit state of the workflow, FunctionWorker puts the result on DataLayer instead.  The Frontend is either waiting for the Dataleyer key upon synchronous requests, or pulls the DataLeyer key on user requests upon asynchronous requests. 
 
 \subsection{Design Objectives}
 The goal of this modification is to allow Knix to create a large number of ready function instances and have them swapped out to storage. To facilitate this goal, the following objectives should be observed:
 
 \subsubsection{Swapped Instance Pool}
+A pool has to be created to manage a large number of function instances. Currently Knix does not have the concept of function instance management as it forks for every function execution and does not reuse instances.
 
 \subsubsection{Pool Scheduling Algorithm}
+With an instance pool and the large number of instances, an scheduling algorithm is necessary to determine the action of swapping in or out instances and the creation and deletion of instances based on hardware load and request volume.
 
 \subsubsection{Revised Request Dataflow}
+The original Knix structure is highly unmanaged. With a pool of instances, a centralized execution management that follows the progress of each requests and determines the next instance in the workflow facilitate a smooth state transition and pool scheduling and management.
+
+The goal of this modification is to achieve better cold-start latency and a smaller memory footprint.
 
 \subsection{First Design}
+\begin{figure}
+    \centering
+    \includegraphics[width=8cm]{knix_new.png}
+    \caption{Request dataflow diagram of the first modification.}
+    \label{knix_new}
+\end{figure}
+Fig.\ref{knix_new} shows the structure and dataflow of the first modification. The major addition is the ExecutionManager and the FunctionWorkerPool. The first design code is in the git branch \verb|swap_dev|.
+
+\paragraph{ExecutionManager}
+The ExecutionManager service hijacks the original topics FunctionWorker uses to receive requests from Frontend and progresses from FunctionWorker. It creates Execution object for each request. It periodically pulls the function topics for new requests and results from FunctionWorker. Then the requests and results are given to Execution for further process.
+
+\paragraph{Execution}
+The Execution object manages the progress and FunctionWorker allocation of a request. Each Execution object comes with an ExecutionPolicy that determines the allocation and return of FunctionWorker instances from the FunctionWorkerPool on new request, on progress or on timer ticks. Execution object also relays requests or results to the appropiate next FunctionWorker instance.
+
+\paragraph{FunctionWorkerPool}
+The FunctionWorkerPool handles the creation, swap-in, swap-out and removal of FunctionWorker instances. It has a PoolPolicy that determines the above actions on allocation request, on instance return and on timer ticks.
+
+\paragraph{FunctionWorker}
+FunctionWorker is modified such that it now pulls an instance-specific topic on the LocalQueue with topic \verb|{function_topic}_{pid}|. It now does not fork upon request, and handles the request on its own process.
+
+\subsection{Flaws on the first design}
+The major flaw of the first design is the very slow deployment and FunctionWorker creation, and the instability comes with it. FunctionWorker is created by FunctionWorkerPool using a new python process each time instead of the original fork, which uses significantly more memory and startup time. The absurd memory usage when FunctionWorkerPool attempts to create a large amount of FunctionWorker on deployment makes the sandbox unstable.
+
+The first design also suspects to a longer request dataflow, potentially prolonging the workflow request latency.
 
 \subsection{Second Design}
+The second design returns to a more self-governing approach. The pool management and execution management are combined into the ExecutionManager. The fork method of FunctionWorker spwaning is also being used again. The second design code is in the git branch \verb|swap_impl|.
 
-\section{Conclusion}
+\paragraph{FunctionWorker}
+FunctionWorker is spawned by SandboxAgent. It now also handles fork command which creates a long-living child process. Every FunctionWorker instance reports to ExecutionManager by itself via a single LocalQueue topic \verb|executionManager|. FunctionWorker instances pulls on instance-specific topic \verb|{function_topic}_{pid}|. When it sends its result to the next FunctionWorker, it consults an Execution-instance map living on the DataLayer, and sends the result to appropiate next FunctionWorker instance topic by itself. If the map entry does not contain the next instance information, FunctionWorker waits for it.
+
+\paragraph{ExecutionManager}
+ExecutionManager now maintains an Execution-instance map on the DataLayer. The map contains the set of FunctionWorker instance topics of every state of the workflow for a certain request execution id, and also extra sets for new requests. This shared map allows Frontend and FunctionWorker to directly pass requests and results to the correct next instance without ExecutionManager relaying them. The map can be partly filled to adapt to the instance allocation and scheduling. ExecutionManager also handles the work of the previous FunctionWorkerPool when maintaining the mapping.
+
+The new structure should restore the request dataflow to the original, and eliminate the instability issue due to poor instance creation method. However the second design is currently unfinished.
+
+\section{Future Works}
+Some area of this project is not finished, including the algorithm for instance scheduling and scaling and performance isolation concerns. 
+
+The instance scheduling algorithm should be able to adjust instance numbers and usage according to workflow progresses and load, in order to provide a service guarantee of the workflow execution. 
+
+There is no performance isolation in current Knix implementation as the FunctionWorker instances are plain processes, which creates uncertainty in maintaining the service guarantee. We hope to provide a lightweight isolation with podman.
+
+The ultimate goal of this project is to provide a serverless platform with balanced cold-start, performance isolation, memory footprint and service guarantee.
 
 \bibliographystyle{IEEEtran}
 \bibliography{main}
